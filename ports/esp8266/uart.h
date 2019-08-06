@@ -8,6 +8,8 @@
 
 #define UART0_STATIC_RXBUF_LEN (16)
 
+#define UART_PIN_NO_CHANGE (-1)
+
 typedef enum {
     UART_FIVE_BITS = 0x0,
     UART_SIX_BITS = 0x1,

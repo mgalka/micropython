@@ -30,6 +30,7 @@
 
 #include "ets_sys.h"
 #include "uart.h"
+#include "user_interface.h"
 
 #include "py/runtime.h"
 #include "py/stream.h"
@@ -45,6 +46,8 @@ typedef struct _pyb_uart_obj_t {
     uint8_t bits;
     uint8_t parity;
     uint8_t stop;
+    int8_t tx;
+    int8_t rx;
     uint32_t baudrate;
     uint16_t timeout;       // timeout waiting for first char (in ms)
     uint16_t timeout_char;  // timeout waiting between chars (in ms)
@@ -57,20 +60,20 @@ STATIC const char *_parity_name[] = {"None", "1", "0"};
 
 STATIC void pyb_uart_print(const mp_print_t *print, mp_obj_t self_in, mp_print_kind_t kind) {
     pyb_uart_obj_t *self = MP_OBJ_TO_PTR(self_in);
-    mp_printf(print, "UART(%u, baudrate=%u, bits=%u, parity=%s, stop=%u, rxbuf=%u, timeout=%u, timeout_char=%u)",
+    mp_printf(print, "UART(%u, baudrate=%u, bits=%u, parity=%s, stop=%u, tx=%d, rx=%d, rxbuf=%u, timeout=%u, timeout_char=%u)",
         self->uart_id, self->baudrate, self->bits, _parity_name[self->parity],
-        self->stop, uart0_get_rxbuf_len() - 1, self->timeout, self->timeout_char);
+        self->stop, self->tx, self->rx, uart0_get_rxbuf_len() - 1, self->timeout, self->timeout_char);
 }
 
 STATIC void pyb_uart_init_helper(pyb_uart_obj_t *self, size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args) {
-    enum { ARG_baudrate, ARG_bits, ARG_parity, ARG_stop, ARG_rxbuf, ARG_timeout, ARG_timeout_char };
+    enum { ARG_baudrate, ARG_bits, ARG_parity, ARG_stop, ARG_tx, ARG_rx, ARG_rxbuf, ARG_timeout, ARG_timeout_char };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_baudrate, MP_ARG_INT, {.u_int = 0} },
         { MP_QSTR_bits, MP_ARG_INT, {.u_int = 0} },
         { MP_QSTR_parity, MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
         { MP_QSTR_stop, MP_ARG_INT, {.u_int = 0} },
-        //{ MP_QSTR_tx, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
-        //{ MP_QSTR_rx, MP_ARG_KW_ONLY | MP_ARG_OBJ, {.u_obj = MP_OBJ_NULL} },
+        { MP_QSTR_tx, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
+        { MP_QSTR_rx, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = UART_PIN_NO_CHANGE} },
         { MP_QSTR_rxbuf, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
         { MP_QSTR_timeout, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
         { MP_QSTR_timeout_char, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 0} },
@@ -125,6 +128,18 @@ STATIC void pyb_uart_init_helper(pyb_uart_obj_t *self, size_t n_args, const mp_o
                 UartDev.parity = UART_EVEN_BITS;
                 self->parity = 2;
             }
+        }
+    }
+
+    if (args[ARG_tx].u_int != UART_PIN_NO_CHANGE || args[ARG_rx].u_int != UART_PIN_NO_CHANGE) {
+        if (self->uart_id != 0) {
+            mp_raise_ValueError("Only UART(0) can define tx and rx");
+        }
+
+        if (args[ARG_tx].u_int == 15 && args[ARG_rx].u_int == 13) {
+            system_uart_swap();
+        } else {
+            mp_raise_ValueError("Invalid pin numbers. Posibble values: tx=15, rx=13");
         }
     }
 
@@ -191,6 +206,8 @@ STATIC mp_obj_t pyb_uart_make_new(const mp_obj_type_t *type, size_t n_args, size
     self->bits = 8;
     self->parity = 0;
     self->stop = 1;
+    self->tx = UART_PIN_NO_CHANGE;
+    self->rx = UART_PIN_NO_CHANGE;
     self->timeout = 0;
     self->timeout_char = 0;
 
